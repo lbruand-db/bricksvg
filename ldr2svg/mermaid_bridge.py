@@ -87,6 +87,43 @@ _SHAPE_RE: list[tuple[re.Pattern, str, int, int]] = [
 ]
 _RE_BARE_ID = re.compile(r'^([\w\-]+)$')
 
+# Modern Mermaid v11.3+ shape syntax:  A@{ shape: cyl, label: "DB" }
+_RE_AT_SHAPE = re.compile(
+    r'^([\w\-]+)\s*@\{\s*(.+?)\s*\}$'
+)
+
+# Map Mermaid v11.3+ shape names → our internal shape names
+_MERMAID_SHAPE_MAP: dict[str, str] = {
+    "st-rect":  "stacked",
+    "cyl":      "cylinder",
+    "lin-cyl":  "cylinder",
+    "h-cyl":    "cylinder",
+    "docs":     "stacked",
+    "rect":     "rect",
+    "circle":   "circle",
+    "diamond":  "diamond",
+    "stadium":  "stadium",
+    "rounded":  "rounded",
+}
+
+
+def _parse_at_shape(token: str) -> tuple[str, str, str] | None:
+    """Parse ``id@{ shape: name, label: "text" }`` → ``(id, label, shape)``."""
+    m = _RE_AT_SHAPE.match(token.strip())
+    if not m:
+        return None
+    nid = m.group(1)
+    body = m.group(2)
+    props: dict[str, str] = {}
+    for part in re.split(r',(?![^"]*"(?:[^"]*"[^"]*")*[^"]*$)', body):
+        kv = part.strip().split(":", 1)
+        if len(kv) == 2:
+            props[kv[0].strip()] = _strip_quotes(kv[1].strip())
+    shape_name = props.get("shape", "rect")
+    label = props.get("label", nid)
+    shape = _MERMAID_SHAPE_MAP.get(shape_name, shape_name)
+    return nid, label, shape
+
 
 def _parse_node_token(token: str) -> tuple[str, str, str]:
     """Parse ``'id[label]'`` etc. and return ``(id, label, shape)``.
@@ -94,6 +131,10 @@ def _parse_node_token(token: str) -> tuple[str, str, str]:
     Falls back to ``(token, token, 'rect')`` for bare identifiers.
     """
     token = token.strip()
+    # Try modern @{} syntax first
+    at_result = _parse_at_shape(token)
+    if at_result:
+        return at_result
     for pat, shape, id_grp, label_grp in _SHAPE_RE:
         m = pat.match(token)
         if m:

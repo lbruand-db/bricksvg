@@ -56,6 +56,8 @@ _TILE_LDU       = 20     # one stud = one 1×1 tile width
 _NODE_TILE_PART      = "3068b"  # 2×2 flat tile placed on top of each node brick (no studs)
 _ROUND_BRICK_PART    = "3941"   # 2×2 round brick (cylinder)
 _ROUND_TILE_PART     = "14769"  # 2×2 round flat tile (cylinder cap)
+_STACKED_PLATE_PART  = "3022"   # 2×2 plate — 3 stacked = 1 brick height
+_STACKED_PLATE_COUNT = 5        # number of plates in a stacked-rectangle node
 _PLATFORM_TILE_PART = "3024"   # 1×1 plate (with stud) for the main cluster platform
 _LABEL_TILE_PART    = "3070b"  # 1×1 flat tile (no stud) — label writing surface at platform front
 
@@ -336,28 +338,46 @@ def _build_node_pieces(
         else:
             color = _provider_color(obj.get("image", ""))
 
+        # Choose brick parts based on Mermaid shape
+        tooltip = obj.get("tooltip", "")
+        mermaid_shape = tooltip.split(":", 1)[1] if tooltip.startswith("shape:") else "rect"
+
+        # Stacked nodes are taller than a single brick
+        stacked_h = _STACKED_PLATE_COUNT * _PLATE_H_LDU
+        body_h = stacked_h if mermaid_shape == "stacked" else _BRICK_H_LDU
+
         if in_cluster:
             depth = cluster_depth[node_cluster[gvid]]
-            node_y = float(-(depth + 1) * _PLATE_H_LDU - _BRICK_H_LDU)
+            node_y = float(-(depth + 1) * _PLATE_H_LDU - body_h)
         else:
-            node_y = float(-_BRICK_H_LDU)
+            node_y = float(-body_h)
         pos = np.array([float(ldx), node_y, float(ldz)])
 
         # Tile sits on top of the brick (more negative Y = higher in LDraw)
         tile_y   = node_y - _PLATE_H_LDU
         tile_pos = np.array([float(ldx), tile_y, float(ldz)])
 
-        # Use round (cylinder) parts for circle/rounded/stadium Mermaid shapes
-        tooltip = obj.get("tooltip", "")
-        is_round = tooltip.startswith("shape:") and tooltip.split(":", 1)[1] in (
-            "circle", "rounded", "stadium",
-        )
-        brick_part = _ROUND_BRICK_PART if is_round else "3003"
-        tile_part  = _ROUND_TILE_PART  if is_round else _NODE_TILE_PART
+        node_pieces: list[Piece] = []
+        if mermaid_shape == "stacked":
+            # Stacked plates (each _PLATE_H_LDU high), taller than a regular brick
+            for i in range(_STACKED_PLATE_COUNT):
+                plate_y = node_y + i * _PLATE_H_LDU
+                plate_pos = np.array([float(ldx), plate_y, float(ldz)])
+                node_pieces.append(Piece(part=_STACKED_PLATE_PART, color=color,
+                                         pos=plate_pos, rot=np.eye(3)))
+            tile = Piece(part=_NODE_TILE_PART, color=color, pos=tile_pos, rot=np.eye(3))
+            node_pieces.append(tile)
+        elif mermaid_shape in ("circle", "rounded", "stadium", "cylinder"):
+            node_pieces.append(Piece(part=_ROUND_BRICK_PART, color=color,
+                                      pos=pos, rot=np.eye(3)))
+            tile = Piece(part=_ROUND_TILE_PART, color=color, pos=tile_pos, rot=np.eye(3))
+            node_pieces.append(tile)
+        else:
+            node_pieces.append(Piece(part="3003", color=color, pos=pos, rot=np.eye(3)))
+            tile = Piece(part=_NODE_TILE_PART, color=color, pos=tile_pos, rot=np.eye(3))
+            node_pieces.append(tile)
 
-        piece = Piece(part=brick_part, color=color, pos=pos,      rot=np.eye(3))
-        tile  = Piece(part=tile_part,  color=color, pos=tile_pos, rot=np.eye(3))
-        pieces.extend([piece, tile])
+        pieces.extend(node_pieces)
         node_data.append({
             "pos":       tile_pos,   # icons project onto the tile's flat top face
             "icon_path": obj.get("image") or None,
@@ -368,9 +388,9 @@ def _build_node_pieces(
         gvid_to_top_y[gvid] = tile_y  # top face of the tile — arc arrow origin/destination
 
         if in_cluster:
-            cluster_node_bricks.setdefault(node_cluster[gvid], []).extend([piece, tile])
+            cluster_node_bricks.setdefault(node_cluster[gvid], []).extend(node_pieces)
         else:
-            lone_node_bricks.extend([piece, tile])
+            lone_node_bricks.extend(node_pieces)
 
     return pieces, node_data, cluster_node_bricks, lone_node_bricks, gvid_to_top_y
 

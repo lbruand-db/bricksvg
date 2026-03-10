@@ -1,11 +1,17 @@
 flowchart TB
+    UC_volume((UC_volume))
+    load_table((load_table))
+    load_table_dedup((load_table_dedup))
+    download@{ shape: st-rect, label: "download" }
+    load@{ shape: st-rect, label: "load" }
+
     setup --> download
-    download --> (UC_volume)
-    (UC_volume) --> load
-    load --> (load_table)
-    (load_table) --> dedup
-    dedup --> (load_table_dedup)
-    (load_table_dedup) --> validate
+    download --> UC_volume
+    UC_volume --> load
+    load --> load_table
+    load_table --> dedup
+    dedup --> load_table_dedup
+    load_table_dedup --> validate
 
     style setup fill:#1b3038,stroke:#ff3620,color:#ffffff
     style download fill:#1b5161,stroke:#ff3620,color:#ffffff
