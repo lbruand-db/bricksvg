@@ -54,6 +54,8 @@ _PLATE_H_LDU    = 8      # height of a 1×1 plate (3024, height = 1/3 brick)
 _BRICK_H_LDU    = 24     # height of a 2×2 brick (3003, height = 1 brick)
 _TILE_LDU       = 20     # one stud = one 1×1 tile width
 _NODE_TILE_PART      = "3068b"  # 2×2 flat tile placed on top of each node brick (no studs)
+_ROUND_BRICK_PART    = "3941"   # 2×2 round brick (cylinder)
+_ROUND_TILE_PART     = "14769"  # 2×2 round flat tile (cylinder cap)
 _PLATFORM_TILE_PART = "3024"   # 1×1 plate (with stud) for the main cluster platform
 _LABEL_TILE_PART    = "3070b"  # 1×1 flat tile (no stud) — label writing surface at platform front
 
@@ -345,8 +347,16 @@ def _build_node_pieces(
         tile_y   = node_y - _PLATE_H_LDU
         tile_pos = np.array([float(ldx), tile_y, float(ldz)])
 
-        piece = Piece(part="3003",           color=color, pos=pos,      rot=np.eye(3))
-        tile  = Piece(part=_NODE_TILE_PART,  color=color, pos=tile_pos, rot=np.eye(3))
+        # Use round (cylinder) parts for circle/rounded/stadium Mermaid shapes
+        tooltip = obj.get("tooltip", "")
+        is_round = tooltip.startswith("shape:") and tooltip.split(":", 1)[1] in (
+            "circle", "rounded", "stadium",
+        )
+        brick_part = _ROUND_BRICK_PART if is_round else "3003"
+        tile_part  = _ROUND_TILE_PART  if is_round else _NODE_TILE_PART
+
+        piece = Piece(part=brick_part, color=color, pos=pos,      rot=np.eye(3))
+        tile  = Piece(part=tile_part,  color=color, pos=tile_pos, rot=np.eye(3))
         pieces.extend([piece, tile])
         node_data.append({
             "pos":       tile_pos,   # icons project onto the tile's flat top face

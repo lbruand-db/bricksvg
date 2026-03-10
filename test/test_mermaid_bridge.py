@@ -45,27 +45,41 @@ graph LR
 
 class TestParseNodeToken:
     def test_rect(self):
-        assert _parse_node_token('A["Label"]') == ("A", "Label")
+        assert _parse_node_token('A["Label"]') == ("A", "Label", "rect")
 
     def test_rect_no_quotes(self):
-        assert _parse_node_token("A[label]") == ("A", "label")
+        assert _parse_node_token("A[label]") == ("A", "label", "rect")
 
     def test_rounded(self):
-        node_id, label = _parse_node_token("A(rounded)")
+        node_id, label, shape = _parse_node_token("A(rounded)")
         assert node_id == "A"
         assert label == "rounded"
+        assert shape == "rounded"
 
     def test_diamond(self):
-        node_id, label = _parse_node_token("A{diamond}")
+        node_id, label, shape = _parse_node_token("A{diamond}")
         assert node_id == "A"
         assert label == "diamond"
+        assert shape == "diamond"
 
     def test_bare_id(self):
-        assert _parse_node_token("myNode") == ("myNode", "myNode")
+        assert _parse_node_token("myNode") == ("myNode", "myNode", "rect")
 
     def test_quoted_label_strips_quotes(self):
-        node_id, label = _parse_node_token('A["hello world"]')
+        node_id, label, _ = _parse_node_token('A["hello world"]')
         assert label == "hello world"
+
+    def test_circle_shape(self):
+        assert _parse_node_token("A((circle))") == ("A", "circle", "circle")
+
+    def test_stadium_shape(self):
+        assert _parse_node_token("A([stadium])") == ("A", "stadium", "stadium")
+
+    def test_bare_rounded(self):
+        assert _parse_node_token("(mydata)") == ("mydata", "mydata", "rounded")
+
+    def test_bare_circle(self):
+        assert _parse_node_token("((mydata))") == ("mydata", "mydata", "circle")
 
 
 # ---------------------------------------------------------------------------
@@ -74,13 +88,16 @@ class TestParseNodeToken:
 
 class TestParseEdge:
     def test_plain_arrow(self):
-        assert _parse_edge("A --> B") == ("A", "B")
+        result = _parse_edge("A --> B")
+        assert result[:2] == ("A", "B")
 
     def test_pipe_label(self):
-        assert _parse_edge("A -->|edge label| B") == ("A", "B")
+        result = _parse_edge("A -->|edge label| B")
+        assert result[:2] == ("A", "B")
 
     def test_text_label(self):
-        assert _parse_edge("A -- text --> B") == ("A", "B")
+        result = _parse_edge("A -- text --> B")
+        assert result[:2] == ("A", "B")
 
     def test_not_an_edge(self):
         assert _parse_edge("subgraph Foo") is None
@@ -91,7 +108,11 @@ class TestParseEdge:
     def test_inline_node_def(self):
         # A[label] --> B[label] — IDs should be extracted correctly
         result = _parse_edge('A["Label A"] --> B["Label B"]')
-        assert result == ("A", "B")
+        assert result[:2] == ("A", "B")
+
+    def test_edge_with_rounded_nodes(self):
+        result = _parse_edge("A --> (B)")
+        assert result == ("A", "B", "rect", "rounded")
 
 
 # ---------------------------------------------------------------------------
@@ -100,42 +121,42 @@ class TestParseEdge:
 
 class TestParseMermaid:
     def test_simple_nodes(self):
-        nodes, edges, clusters, top_nodes, _ = _parse_mermaid(_SIMPLE)
+        nodes, edges, clusters, top_nodes, _, _ = _parse_mermaid(_SIMPLE)
         assert "A" in nodes
         assert "B" in nodes
         assert nodes["A"] == "Node A"
         assert nodes["B"] == "Node B"
 
     def test_simple_edges(self):
-        nodes, edges, clusters, top_nodes, _ = _parse_mermaid(_SIMPLE)
+        nodes, edges, clusters, top_nodes, _, _ = _parse_mermaid(_SIMPLE)
         assert ("A", "B") in edges
 
     def test_no_clusters(self):
-        _, _, clusters, _, _ = _parse_mermaid(_SIMPLE)
+        _, _, clusters, _, _, _ = _parse_mermaid(_SIMPLE)
         assert clusters == []
 
     def test_top_nodes_not_in_cluster(self):
-        _, _, _, top_nodes, _ = _parse_mermaid(_SIMPLE)
+        _, _, _, top_nodes, _, _ = _parse_mermaid(_SIMPLE)
         assert "A" in top_nodes
         assert "B" in top_nodes
 
     def test_cluster_extracted(self):
-        _, _, clusters, _, _ = _parse_mermaid(_WITH_CLUSTER)
+        _, _, clusters, _, _, _ = _parse_mermaid(_WITH_CLUSTER)
         assert len(clusters) == 1
         assert clusters[0].id == "Cluster1"
         assert clusters[0].label == "My Cluster"
 
     def test_cluster_member(self):
-        _, _, clusters, _, _ = _parse_mermaid(_WITH_CLUSTER)
+        _, _, clusters, _, _, _ = _parse_mermaid(_WITH_CLUSTER)
         assert "inner" in clusters[0].nodes
 
     def test_top_node_not_in_cluster(self):
-        _, _, clusters, top_nodes, _ = _parse_mermaid(_WITH_CLUSTER)
+        _, _, clusters, top_nodes, _, _ = _parse_mermaid(_WITH_CLUSTER)
         assert "top" in top_nodes
         assert "top" not in clusters[0].nodes
 
     def test_nested_clusters(self):
-        _, _, clusters, _, _ = _parse_mermaid(_NESTED)
+        _, _, clusters, _, _, _ = _parse_mermaid(_NESTED)
         assert len(clusters) == 1
         outer = clusters[0]
         assert outer.id == "Outer"
@@ -146,13 +167,13 @@ class TestParseMermaid:
 
     def test_example_mmd_nodes(self):
         text = EXAMPLE_MMD.read_text()
-        nodes, edges, clusters, top_nodes, _ = _parse_mermaid(text)
+        nodes, edges, clusters, top_nodes, _, _ = _parse_mermaid(text)
         assert "gcp_lb" in top_nodes
         assert nodes["gcp_lb"] == "GCP LB"
 
     def test_example_mmd_edges(self):
         text = EXAMPLE_MMD.read_text()
-        _, edges, _, _, _ = _parse_mermaid(text)
+        _, edges, _, _, _, _ = _parse_mermaid(text)
         assert ("gcp_lb", "nginx") in edges
         assert ("nginx", "myapp_ing") in edges
         assert ("myapp_ing", "myapp_pods") in edges
@@ -160,13 +181,13 @@ class TestParseMermaid:
 
     def test_example_mmd_clusters(self):
         text = EXAMPLE_MMD.read_text()
-        _, _, clusters, _, _ = _parse_mermaid(text)
+        _, _, clusters, _, _, _ = _parse_mermaid(text)
         cluster_ids = {c.id for c in clusters}
         assert "Kubernetes" in cluster_ids
 
     def test_example_mmd_nested_structure(self):
         text = EXAMPLE_MMD.read_text()
-        _, _, clusters, _, _ = _parse_mermaid(text)
+        _, _, clusters, _, _, _ = _parse_mermaid(text)
         k8s = next(c for c in clusters if c.id == "Kubernetes")
         child_ids = {ch.id for ch in k8s.children}
         assert {"Nginx", "MyApp", "MySQL"} == child_ids
@@ -178,8 +199,8 @@ class TestParseMermaid:
 
 class TestBuildDot:
     def _dot_for(self, text):
-        nodes, edges, clusters, top_nodes, node_colors = _parse_mermaid(text)
-        return _build_dot(nodes, edges, clusters, top_nodes, node_colors)
+        nodes, edges, clusters, top_nodes, node_colors, node_shapes = _parse_mermaid(text)
+        return _build_dot(nodes, edges, clusters, top_nodes, node_colors, node_shapes)
 
     def test_starts_with_digraph(self):
         dot = self._dot_for(_SIMPLE)
