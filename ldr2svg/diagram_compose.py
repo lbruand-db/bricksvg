@@ -233,11 +233,20 @@ def _draw_labels(
         # of the tile+brick assembly in LDraw Y (down = more positive).
         lx, ly = _proj_canvas(np.array([ldx, ldy + hh, ldz + hw]), cx, cy)
 
+        # Auto-contrast: white text on dark bricks, dark text on light bricks
+        color_id = nd.get("color")
+        if color_id is not None:
+            r, g, b = ldraw_rgb(color_id)
+            luminance = 0.299 * r + 0.587 * g + 0.114 * b
+            text_fill = "#fff" if luminance < 140 else "#333"
+        else:
+            text_fill = "#333"
+
         text_el = dwg.text(
             nd["label"],
             insert=(0, 0),
             font_size="14",
-            fill="#333",
+            fill=text_fill,
             text_anchor="middle",
         )
         # scaleY(cos30°) → skewX(30°) → rotate(30° CW)

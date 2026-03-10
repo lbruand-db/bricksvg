@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 import diagrams
 
-from .parts import Piece, register_custom_color
+from .parts import Piece, ldraw_rgb, register_custom_color
 
 # ---------------------------------------------------------------------------
 # Graph extraction
@@ -357,13 +357,22 @@ def _build_node_pieces(
         tile_y   = node_y - _PLATE_H_LDU
         tile_pos = np.array([float(ldx), tile_y, float(ldz)])
 
+        # Derive alternate color by lightening the fill ~30% toward white
+        fr, fg, fb = ldraw_rgb(color)
+        alt_color = register_custom_color(
+            fr + (255 - fr) * 3 // 10,
+            fg + (255 - fg) * 3 // 10,
+            fb + (255 - fb) * 3 // 10,
+        )
+
         node_pieces: list[Piece] = []
         if mermaid_shape == "stacked":
-            # Stacked plates (each _PLATE_H_LDU high), taller than a regular brick
+            # Stacked plates with alternating fill/stroke colors
             for i in range(_STACKED_PLATE_COUNT):
                 plate_y = node_y + i * _PLATE_H_LDU
                 plate_pos = np.array([float(ldx), plate_y, float(ldz)])
-                node_pieces.append(Piece(part=_STACKED_PLATE_PART, color=color,
+                plate_color = color if i % 2 == 0 else alt_color
+                node_pieces.append(Piece(part=_STACKED_PLATE_PART, color=plate_color,
                                          pos=plate_pos, rot=np.eye(3)))
             tile = Piece(part=_NODE_TILE_PART, color=color, pos=tile_pos, rot=np.eye(3))
             node_pieces.append(tile)
@@ -382,6 +391,7 @@ def _build_node_pieces(
             "pos":       tile_pos,   # icons project onto the tile's flat top face
             "icon_path": obj.get("image") or None,
             "label":     obj.get("label", ""),
+            "color":     color,      # LDraw color ID for label contrast
             "half_w":    _TILE_LDU,                       # 20 LDU = half the 2×2 footprint
             "half_h":    (_PLATE_H_LDU + _BRICK_H_LDU) // 2,  # 16 LDU = half the total height
         })
