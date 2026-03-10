@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 import diagrams
 
-from .parts import Piece
+from .parts import Piece, register_custom_color
 
 # ---------------------------------------------------------------------------
 # Graph extraction
@@ -325,8 +325,14 @@ def _build_node_pieces(
         ldx, ldz = gvid_to_ld[gvid]
         in_cluster = gvid in node_cluster
 
-        color = (cluster_color[node_cluster[gvid]] if in_cluster
-                 else _provider_color(obj.get("image", "")))
+        fillcolor = obj.get("fillcolor")
+        if fillcolor is not None and fillcolor.startswith("#"):
+            h = fillcolor.lstrip("#")
+            color = register_custom_color(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+        elif in_cluster:
+            color = cluster_color[node_cluster[gvid]]
+        else:
+            color = _provider_color(obj.get("image", ""))
 
         if in_cluster:
             depth = cluster_depth[node_cluster[gvid]]

@@ -24,6 +24,29 @@ import graphviz
 
 
 # ---------------------------------------------------------------------------
+# Style directive parser
+# ---------------------------------------------------------------------------
+
+_RE_STYLE = re.compile(
+    r"^style\s+([\w\-]+)\s+(.+)$", re.IGNORECASE
+)
+
+
+def _parse_style(line: str) -> tuple[str, str] | None:
+    """Parse ``style nodeId fill:#abc,stroke:#def,...`` → ``(nodeId, '#rrggbb')`` or None."""
+    m = _RE_STYLE.match(line)
+    if not m:
+        return None
+    node_id = m.group(1)
+    props = m.group(2)
+    for prop in props.split(","):
+        key_val = prop.strip().split(":", 1)
+        if len(key_val) == 2 and key_val[0].strip() == "fill":
+            return node_id, key_val[1].strip()
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 
@@ -104,6 +127,7 @@ def _parse_mermaid(text: str) -> tuple[
     list[tuple[str, str]],      # edges: (tail_id, head_id)
     list[_Cluster],             # top-level clusters
     list[str],                  # top-level node IDs (not in any cluster)
+    dict[str, str],             # node_id → hex fill color (e.g. '#ff3620')
 ]:
     """Parse a Mermaid flowchart string into its structural components."""
     lines = [
@@ -116,10 +140,18 @@ def _parse_mermaid(text: str) -> tuple[
     cluster_stack: list[_Cluster] = []
     top_clusters: list[_Cluster] = []
     top_nodes: list[str] = []
+    node_colors: dict[str, str] = {}
 
     for line in lines:
         # Graph / flowchart direction declaration — skip
         if re.match(r"^(?:graph|flowchart)\s", line, re.IGNORECASE):
+            continue
+
+        # Style directive — extract fill color
+        style = _parse_style(line)
+        if style:
+            nid, hex_color = style
+            node_colors[nid] = hex_color
             continue
 
         # Subgraph start
@@ -161,7 +193,7 @@ def _parse_mermaid(text: str) -> tuple[
                 if node_id not in top_nodes:
                     top_nodes.append(node_id)
 
-    return nodes, edges, top_clusters, top_nodes
+    return nodes, edges, top_clusters, top_nodes, node_colors
 
 
 # ---------------------------------------------------------------------------
@@ -173,15 +205,25 @@ def _dot_str(s: str) -> str:
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _cluster_to_dot(c: _Cluster, nodes: dict[str, str], depth: int = 1) -> list[str]:
+def _node_attrs(nid: str, label: str, node_colors: dict[str, str]) -> str:
+    """Build DOT attribute string for a node, including fillcolor if styled."""
+    attrs = [f"label={_dot_str(label)}"]
+    if nid in node_colors:
+        attrs.append(f'style="filled" fillcolor={_dot_str(node_colors[nid])}')
+    return " ".join(attrs)
+
+
+def _cluster_to_dot(
+    c: _Cluster, nodes: dict[str, str], node_colors: dict[str, str], depth: int = 1,
+) -> list[str]:
     pad   = "    " * depth
     lines = [f"{pad}subgraph cluster_{c.id} {{"]
     lines.append(f"{pad}    label={_dot_str(c.label)}")
     for nid in c.nodes:
         label = nodes.get(nid, nid)
-        lines.append(f"{pad}    {_dot_str(nid)} [label={_dot_str(label)}]")
+        lines.append(f"{pad}    {_dot_str(nid)} [{_node_attrs(nid, label, node_colors)}]")
     for child in c.children:
-        lines.extend(_cluster_to_dot(child, nodes, depth + 1))
+        lines.extend(_cluster_to_dot(child, nodes, node_colors, depth + 1))
     lines.append(f"{pad}}}")
     return lines
 
@@ -191,15 +233,27 @@ def _build_dot(
     edges: list[tuple[str, str]],
     top_clusters: list[_Cluster],
     top_nodes: list[str],
+    node_colors: dict[str, str],
 ) -> str:
     """Return a DOT digraph string ready to be laid out by graphviz."""
     lines = ["digraph {", "    rankdir=LR"]
 
-    for nid in top_nodes:
-        lines.append(f"    {_dot_str(nid)} [label={_dot_str(nodes.get(nid, nid))}]")
+    # Collect node IDs declared inside clusters so we don't double-declare them
+    cluster_node_ids: set[str] = set()
+    def _collect_cluster_nodes(c: _Cluster) -> None:
+        cluster_node_ids.update(c.nodes)
+        for child in c.children:
+            _collect_cluster_nodes(child)
+    for c in top_clusters:
+        _collect_cluster_nodes(c)
+
+    # Emit all non-cluster nodes (top-level) with their attributes
+    for nid in nodes:
+        if nid not in cluster_node_ids:
+            lines.append(f"    {_dot_str(nid)} [{_node_attrs(nid, nodes.get(nid, nid), node_colors)}]")
 
     for c in top_clusters:
-        lines.extend(_cluster_to_dot(c, nodes))
+        lines.extend(_cluster_to_dot(c, nodes, node_colors))
 
     for tail, head in edges:
         lines.append(f"    {_dot_str(tail)} -> {_dot_str(head)}")
@@ -220,7 +274,7 @@ def extract_graph(mermaid_path: str) -> dict:
     ``diagram_bridge.build_ldr_scene``.
     """
     text = Path(mermaid_path).read_text(encoding="utf-8")
-    nodes, edges, top_clusters, top_nodes = _parse_mermaid(text)
-    dot_src = _build_dot(nodes, edges, top_clusters, top_nodes)
+    nodes, edges, top_clusters, top_nodes, node_colors = _parse_mermaid(text)
+    dot_src = _build_dot(nodes, edges, top_clusters, top_nodes, node_colors)
     src = graphviz.Source(dot_src)
     return json.loads(src.pipe(format="json", engine="dot"))

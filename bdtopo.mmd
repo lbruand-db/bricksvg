@@ -1,0 +1,11 @@
+flowchart TB
+    setup --> download
+    download --> load
+    load --> dedup
+    dedup --> validate
+
+    style setup fill:#1b3038,stroke:#ff3620,color:#ffffff
+    style download fill:#1b5161,stroke:#ff3620,color:#ffffff
+    style load fill:#618793,stroke:#ff3620,color:#ffffff
+    style dedup fill:#6ca6bb,stroke:#ff3620,color:#1b3038
+    style validate fill:#ff3620,stroke:#1b3038,color:#ffffff

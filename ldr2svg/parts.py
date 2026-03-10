@@ -22,6 +22,21 @@ LDRAW_COLORS: dict[int, tuple[int, int, int]] = {
     320: (114, 14, 14),  321: (54, 172, 200), 484: (160, 82, 48),
 }
 
+_NEXT_CUSTOM_COLOR_ID = 1000
+
+
+def register_custom_color(r: int, g: int, b: int) -> int:
+    """Register an arbitrary RGB color and return its synthetic color ID."""
+    global _NEXT_CUSTOM_COLOR_ID  # noqa: PLW0603
+    for cid, rgb in LDRAW_COLORS.items():
+        if rgb == (r, g, b):
+            return cid
+    cid = _NEXT_CUSTOM_COLOR_ID
+    _NEXT_CUSTOM_COLOR_ID += 1
+    LDRAW_COLORS[cid] = (r, g, b)
+    return cid
+
+
 def ldraw_rgb(color_id: int) -> tuple[int, int, int]:
     return LDRAW_COLORS.get(color_id, (136, 136, 136))
 
